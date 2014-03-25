@@ -295,7 +295,8 @@ let () =
 	"mli|ml Type of output to generate.";
       "-o", Arg.String (fun s -> ml_out_r := Some s),
 	"PATH Write the output to PATH instead of standard output."; ]
-    (fun s -> rev_inputs_r := s :: !rev_inputs_r) "<input.sql>+";
+    (fun s -> rev_inputs_r := s :: !rev_inputs_r)
+    (Sys.argv.(0) ^ " <input.sql>+");
   let sqlgg_args = !sqlgg_args_r @ List.rev !rev_inputs_r in
   let sqlgg_command =
     String.concat " " (!sqlgg :: List.map sh_escaped sqlgg_args) in
