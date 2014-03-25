@@ -1,0 +1,21 @@
+OASISFormat: 0.4
+Name: ocaml-caqti-sqlgg
+Version: 0.1
+Synopsis: Code generator for Caqti built on sqlgg
+Authors: Petter A. Urkedal
+License: LGPL-3 with OCaml linking exception
+Plugins: DevFiles (0.4), META (0.4)
+BuildTools: ocamlbuild
+
+Executable caqtigg
+  Path: src
+  MainIs: caqtigg_main.ml
+  BuildDepends: pcre, unix, xmlm
+  CompiledObject: best
+
+Executable test
+  Path: tests
+  MainIs: test_sql.ml
+  BuildDepends: caqti
+  ByteOpt: -thread
+  NativeOpt: -thread
