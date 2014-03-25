@@ -20,6 +20,12 @@ CREATE TABLE test (
     note text
 );
 
+-- @insert
+INSERT INTO test (exact, x, note) VALUES (?, ?, ?);
+-- @set_value
+UPDATE test SET x = ? WHERE id = ?;
+-- @set_note
+UPDATE test SET note = ? WHERE id = ?;
 -- @select_all
 SELECT * FROM test;
 -- @select_ge

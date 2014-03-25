@@ -16,6 +16,9 @@
 
 open Printf
 
+type pass_conn = [`Functor | `First | `Second | `Last]
+let pass_conn : pass_conn ref = ref `Last
+
 let sqlgg = ref "sqlgg"
 let monad_module = ref "Lwt"
 let connect_module = ref "Caqti_lwt"
@@ -63,7 +66,12 @@ let comment_of_sql sql =
 (* Code Generation *)
 
 let emit_prologue oc_mli oc_ml =
-  iter_option (fun oc -> fprintf oc "open %s\n\n" !connect_module) oc_mli;
+  iter_option
+    (fun oc ->
+      fprintf oc "open %s\n\n" !connect_module;
+      if !pass_conn = `Functor then
+	output_string oc "module Make (C : CONNECTION) : sig\n\n")
+    oc_mli;
   iter_option
     (fun oc ->
       List.iter (fprintf oc "open %s\n")
@@ -73,26 +81,37 @@ let emit_prologue oc_mli oc_ml =
 	\  | Some r -> return r\n\
 	\  | None ->\n\
 	\    fail (Caqti.Miscommunication (uri, q, \
-				\"Received no tuples, expected one.\"))\n\n")
+				\"Received no tuples, expected one.\"))\n\n";
+      if !pass_conn = `Functor then
+	output_string oc "module Make (C : CONNECTION) = struct\n\n")
     oc_ml
 
-let emit_intf_params oc ivs =
+let emit_epilogue oc_mli oc_ml =
+  if !pass_conn = `Functor then begin
+    iter_option (fun oc -> output_string oc "end\n") oc_mli;
+    iter_option (fun oc -> output_string oc "end\n") oc_ml
+  end
+
+let emit_intf_params emit_callback_param oc ivs =
+  if !pass_conn = `First then output_string oc "(module CONNECTION) -> ";
+  emit_callback_param ();
+  if !pass_conn = `Second then output_string oc "(module CONNECTION) -> ";
   List.iter
     (fun (idr, typ) ->
       output_string oc (type_of_sqltype typ);
       output_string oc " -> ")
     ivs;
-  output_string oc "(module CONNECTION) -> "
+  if !pass_conn = `Last then output_string oc "(module CONNECTION) -> "
 
 let emit_intf_exec oc name sql ivs =
   fprintf oc "val %s : " name;
-  emit_intf_params oc ivs;
+  emit_intf_params (fun () -> ()) oc ivs;
   output_string oc "unit io\n";
   if !add_docstrings then fprintf oc "(** [%s] *)\n\n" (comment_of_sql sql)
 
 let emit_intf_single is_opt oc name sql ivs ovs =
   fprintf oc "val %s : " name;
-  emit_intf_params oc ivs;
+  emit_intf_params (fun () -> ()) oc ivs;
   if ovs = [] then output_string oc "unit"
   else begin
     if List.tl ovs <> [] then output_char oc '(';
@@ -107,20 +126,18 @@ let emit_intf_single is_opt oc name sql ivs ovs =
   if !add_docstrings then fprintf oc "(** [%s] *)\n\n" (comment_of_sql sql)
 
 let emit_intf_multi op mint mext oc name sql ivs ovs =
-  fprintf oc "val %s_%s : (" op name;
-  List.iter
-    (fun (idr, typ) ->
-      output_string oc (type_of_sqltype typ);
-      output_string oc " -> ")
-    ovs;
-  output_string oc mint;
-  output_string oc ") -> ";
-  List.iter
-    (fun (idr, typ) ->
-      output_string oc (type_of_sqltype typ);
-      output_string oc " -> ")
-    ivs;
-  output_string oc "(module CONNECTION) -> ";
+  fprintf oc "val %s_%s : " op name;
+  emit_intf_params
+    (fun () ->
+      output_char oc '(';
+      List.iter
+	(fun (idr, typ) ->
+	  output_string oc (type_of_sqltype typ);
+	  output_string oc " -> ")
+	ovs;
+      output_string oc mint;
+      output_string oc ") -> ")
+    oc ivs;
   output_string oc mext;
   output_char oc '\n';
   if !add_docstrings then fprintf oc "(** [%s] *)\n\n" (comment_of_sql sql)
@@ -136,9 +153,12 @@ let emit_intf oc name sql cardinals ivs ovs =
     emit_intf_multi "iter_s" "unit io" "unit io" oc name sql ivs ovs;
     emit_intf_multi "iter_p" "unit io" "unit io" oc name sql ivs ovs
 
-let emit_impl_introline_rest oc ivs =
+let emit_impl_formals has_callback oc ivs =
+  if !pass_conn = `First then output_string oc " (module C : CONNECTION)";
+  if has_callback then output_string oc " f";
+  if !pass_conn = `Second then output_string oc " (module C : CONNECTION)";
   List.iter (fun (idr, typ) -> output_char oc ' '; output_string oc idr) ivs;
-  output_string oc " (module C : CONNECTION) =\n"
+  if !pass_conn = `Last then output_string oc " (module C : CONNECTION)"
 
 let emit_impl_params oc ivs =
   output_string oc "C.Param.([|";
@@ -151,8 +171,8 @@ let emit_impl_params oc ivs =
 
 let emit_impl_exec oc name ivs =
   fprintf oc "let %s" name;
-  emit_impl_introline_rest oc ivs;
-  fprintf oc "  C.exec _%s " name;
+  emit_impl_formals false oc ivs;
+  fprintf oc " =\n  C.exec _%s " name;
   emit_impl_params oc ivs;
   output_char oc '\n'
 
@@ -167,7 +187,8 @@ let emit_impl_decode oc ovs =
 
 let emit_impl_zero_one is_opt oc name ivs ovs =
   fprintf oc "let %s" name;
-  emit_impl_introline_rest oc ivs;
+  emit_impl_formals false oc ivs;
+  output_string oc " =\n";
   emit_impl_decode oc ovs;
   fprintf oc "  C.find _%s g " name;
   emit_impl_params oc ivs;
@@ -175,7 +196,8 @@ let emit_impl_zero_one is_opt oc name ivs ovs =
 
 let emit_impl_one is_opt oc name ivs ovs =
   fprintf oc "let %s" name;
-  emit_impl_introline_rest oc ivs;
+  emit_impl_formals false oc ivs;
+  output_string oc " =\n";
   emit_impl_decode oc ovs;
   fprintf oc "  C.find _%s g " name;
   emit_impl_params oc ivs;
@@ -183,9 +205,9 @@ let emit_impl_one is_opt oc name ivs ovs =
   fprintf oc " >>= required C.uri _%s" name
 
 let emit_impl_multi op oc name ivs ovs =
-  fprintf oc "let %s_%s f" op name;
-  emit_impl_introline_rest oc ivs;
-  fprintf oc "  let g r = C.Tuple.(f";
+  fprintf oc "let %s_%s" op name;
+  emit_impl_formals true oc ivs;
+  fprintf oc "=\n  let g r = C.Tuple.(f";
   List.iteri
     (fun i (idr, typ) -> fprintf oc " (%s %d r)" (type_of_sqltype typ) i)
     ovs;
@@ -283,6 +305,12 @@ let () =
   let sqlgg_args_r = ref ["-gen"; "xml"] in
   let ml_out_r = ref None in
   let gen_r = ref `Auto in
+  let set_pass_connection = function
+    | "functor" -> pass_conn := `Functor
+    | "first" -> pass_conn := `First
+    | "second" -> pass_conn := `Second
+    | "last" -> pass_conn := `Last
+    | _ -> raise (Arg.Bad "Invalid argument for -pass-connection") in
   Arg.parse
     [ "-name",
 	Arg.String (fun s -> sqlgg_args_r := "-name" :: sh_escaped s
@@ -293,6 +321,9 @@ let () =
 			   | "ml" -> gen_r := `ml
 			   | _ -> raise (Arg.Bad "Unsupported output type.")),
 	"mli|ml Type of output to generate.";
+      "-pass-connection",
+	Arg.String set_pass_connection,
+	"functor|first|second|last Where to accept the CONNECTION parameter.";
       "-o", Arg.String (fun s -> ml_out_r := Some s),
 	"PATH Write the output to PATH instead of standard output."; ]
     (fun s -> rev_inputs_r := s :: !rev_inputs_r)
@@ -314,7 +345,8 @@ let () =
     try
       let xic = Xmlm.make_input (`Channel ic) in
       emit_prologue mli_oc ml_oc;
-      scan_sqlgg (emit_code mli_oc ml_oc) xic ()
+      scan_sqlgg (emit_code mli_oc ml_oc) xic ();
+      emit_epilogue mli_oc ml_oc
     with Xmlm.Error ((lnum, cnum), error) ->
       eprintf "%d:%d: %s\n" lnum cnum (Xmlm.error_message error);
       exit 69
