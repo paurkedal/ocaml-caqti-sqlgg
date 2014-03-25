@@ -3,7 +3,7 @@
 ## Synopsis
 
 This package provides a single command `caqtigg` which is a wrapper for
-`sqlgg` to generate code which uses the
+[sqlgg](http://ygrek.org.ua/p/sqlgg/) to generate code which uses the
 [Caqti](https://github.com/paurkedal/ocaml-caqti) OCaml database interface.
 
 ## Status
