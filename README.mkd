@@ -8,4 +8,4 @@ This package provides a single command `caqtigg` which is a wrapper for
 
 ## Status
 
-This package is experimental and requires a patched version of `sqlgg`.
+This package is experimental and requires sqlgg > 0.2.4.
