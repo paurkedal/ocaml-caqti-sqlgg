@@ -38,6 +38,9 @@ let type_of_sqltype = function
   | "Text" -> "string"
   | "Datetime" -> "utc"
   | s -> ksprintf invalid_arg "Type %s reported by sqlgg is not supported." s
+let conv_of_sqltype = function
+  | "Text" -> "text"
+  | s -> type_of_sqltype s
 
 (* SQL Fixup *)
 
@@ -77,10 +80,14 @@ let emit_prologue oc_mli oc_ml =
       List.iter (fprintf oc "open %s\n")
 		[!monad_module; "Caqti_query"; !connect_module];
       output_string oc "\n\
-	let required uri q = function\n\
+	let _query_info (module C : CONNECTION) = function\n\
+	\  | Oneshot qs -> `Oneshot (qs C.backend_info)\n\
+	\  | Prepared qs -> `Prepared (qs.prepared_query_name, \
+				       qs.prepared_query_sql C.backend_info)\n\
+	let _required (module C : CONNECTION) q = function\n\
 	\  | Some r -> return r\n\
 	\  | None ->\n\
-	\    fail (Caqti.Miscommunication (uri, q, \
+	\    fail (Caqti.Miscommunication (C.uri, _query_info (module C) q, \
 				\"Received no tuples, expected one.\"))\n\n";
       if !pass_conn = `Functor then
 	output_string oc "module Make (C : CONNECTION) = struct\n\n")
@@ -165,7 +172,7 @@ let emit_impl_params oc ivs =
   List.iteri
     (fun i (idr, typ) ->
       if i > 0 then output_string oc "; ";
-      fprintf oc "%s %s" (type_of_sqltype typ) idr)
+      fprintf oc "%s %s" (conv_of_sqltype typ) idr)
     ivs;
   output_string oc "|])"
 
@@ -181,7 +188,7 @@ let emit_impl_decode oc ovs =
   List.iteri
     (fun i (idr, typ) ->
       if i > 0 then output_string oc ", ";
-      fprintf oc "%s %d r" (type_of_sqltype typ) i)
+      fprintf oc "%s %d r" (conv_of_sqltype typ) i)
     ovs;
   output_string oc ") in\n"
 
@@ -202,14 +209,14 @@ let emit_impl_one is_opt oc name ivs ovs =
   fprintf oc "  C.find _%s g " name;
   emit_impl_params oc ivs;
   (* FIXME: The following shall raise Miscommunication. *)
-  fprintf oc " >>= required C.uri _%s" name
+  fprintf oc " >>= _required (module C) _%s" name
 
 let emit_impl_multi op oc name ivs ovs =
   fprintf oc "let %s_%s" op name;
   emit_impl_formals true oc ivs;
   fprintf oc "=\n  let g r = C.Tuple.(f";
   List.iteri
-    (fun i (idr, typ) -> fprintf oc " (%s %d r)" (type_of_sqltype typ) i)
+    (fun i (idr, typ) -> fprintf oc " (%s %d r)" (conv_of_sqltype typ) i)
     ovs;
   output_string oc ") in\n";
   fprintf oc "  C.%s _%s g " op name;

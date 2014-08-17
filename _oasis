@@ -16,6 +16,6 @@ Executable caqtigg
 Executable test
   Path: tests
   MainIs: test_sql.ml
-  BuildDepends: caqti
+  BuildDepends: caqti, lwt
   ByteOpt: -thread
   NativeOpt: -thread
