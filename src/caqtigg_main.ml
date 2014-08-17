@@ -82,8 +82,8 @@ let emit_prologue oc_mli oc_ml =
       output_string oc "\n\
 	let _query_info (module C : CONNECTION) = function\n\
 	\  | Oneshot qs -> `Oneshot (qs C.backend_info)\n\
-	\  | Prepared qs -> `Prepared (qs.prepared_query_name, \
-				       qs.prepared_query_sql C.backend_info)\n\
+	\  | Prepared qs -> `Prepared (qs.pq_name, \
+				       qs.pq_encode C.backend_info)\n\
 	let _required (module C : CONNECTION) q = function\n\
 	\  | Some r -> return r\n\
 	\  | None ->\n\
