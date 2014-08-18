@@ -16,8 +16,8 @@
 
 open Printf
 
-type pass_conn = [`Functor | `First | `Second | `Last]
-let pass_conn : pass_conn ref = ref `Last
+let param_order = ref "Cfx"
+let use_functor = ref false
 
 let sqlgg = ref "sqlgg"
 let monad_module = ref "Lwt"
@@ -72,7 +72,7 @@ let emit_prologue oc_mli oc_ml =
   iter_option
     (fun oc ->
       fprintf oc "open %s\n\n" !connect_module;
-      if !pass_conn = `Functor then
+      if !use_functor then
 	output_string oc "module Make (C : CONNECTION) : sig\n\n")
     oc_mli;
   iter_option
@@ -89,36 +89,40 @@ let emit_prologue oc_mli oc_ml =
 	\  | None ->\n\
 	\    fail (Caqti.Miscommunication (C.uri, _query_info (module C) q, \
 				\"Received no tuples, expected one.\"))\n\n";
-      if !pass_conn = `Functor then
+      if !use_functor then
 	output_string oc "module Make (C : CONNECTION) = struct\n\n")
     oc_ml
 
 let emit_epilogue oc_mli oc_ml =
-  if !pass_conn = `Functor then begin
+  if !use_functor then begin
     iter_option (fun oc -> output_string oc "end\n") oc_mli;
     iter_option (fun oc -> output_string oc "end\n") oc_ml
   end
 
 let emit_intf_params emit_callback_param oc ivs =
-  if !pass_conn = `First then output_string oc "(module CONNECTION) -> ";
-  emit_callback_param ();
-  if !pass_conn = `Second then output_string oc "(module CONNECTION) -> ";
-  List.iter
-    (fun (idr, typ) ->
-      output_string oc (type_of_sqltype typ);
-      output_string oc " -> ")
-    ivs;
-  if !pass_conn = `Last then output_string oc "(module CONNECTION) -> "
+  let emit_param (idr, typ) =
+    output_string oc (type_of_sqltype typ);
+    output_string oc " -> " in
+  if ivs = [] && emit_callback_param = None && !use_functor then
+    output_string oc "unit -> "
+  else
+    String.iter
+      (function
+	| 'C' -> output_string oc "(module CONNECTION) -> "
+	| 'f' -> (match emit_callback_param with None -> () | Some f -> f ())
+	| 'x' -> List.iter emit_param ivs
+	| _ -> assert false)
+      !param_order
 
 let emit_intf_exec oc name sql ivs =
   fprintf oc "val %s : " name;
-  emit_intf_params (fun () -> ()) oc ivs;
+  emit_intf_params None oc ivs;
   output_string oc "unit io\n";
   if !add_docstrings then fprintf oc "(** [%s] *)\n\n" (comment_of_sql sql)
 
 let emit_intf_single is_opt oc name sql ivs ovs =
   fprintf oc "val %s : " name;
-  emit_intf_params (fun () -> ()) oc ivs;
+  emit_intf_params None oc ivs;
   if ovs = [] then output_string oc "unit"
   else begin
     if List.tl ovs <> [] then output_char oc '(';
@@ -134,17 +138,16 @@ let emit_intf_single is_opt oc name sql ivs ovs =
 
 let emit_intf_multi op mint mext oc name sql ivs ovs =
   fprintf oc "val %s_%s : " op name;
-  emit_intf_params
-    (fun () ->
-      output_char oc '(';
-      List.iter
-	(fun (idr, typ) ->
-	  output_string oc (type_of_sqltype typ);
-	  output_string oc " -> ")
-	ovs;
-      output_string oc mint;
-      output_string oc ") -> ")
-    oc ivs;
+  let emit_callback_params () =
+    output_char oc '(';
+    List.iter
+      (fun (idr, typ) ->
+	output_string oc (type_of_sqltype typ);
+	output_string oc " -> ")
+      ovs;
+    output_string oc mint;
+    output_string oc ") -> " in
+  emit_intf_params (Some emit_callback_params) oc ivs;
   output_string oc mext;
   output_char oc '\n';
   if !add_docstrings then fprintf oc "(** [%s] *)\n\n" (comment_of_sql sql)
@@ -161,11 +164,17 @@ let emit_intf oc name sql cardinals ivs ovs =
     emit_intf_multi "iter_p" "unit io" "unit io" oc name sql ivs ovs
 
 let emit_impl_formals has_callback oc ivs =
-  if !pass_conn = `First then output_string oc " (module C : CONNECTION)";
-  if has_callback then output_string oc " f";
-  if !pass_conn = `Second then output_string oc " (module C : CONNECTION)";
-  List.iter (fun (idr, typ) -> output_char oc ' '; output_string oc idr) ivs;
-  if !pass_conn = `Last then output_string oc " (module C : CONNECTION)"
+  let emit_param (idr, typ) = output_char oc ' '; output_string oc idr in
+  if ivs = [] && not has_callback && !use_functor then
+    output_string oc " ()"
+  else
+    String.iter
+      (function
+	| 'C' -> output_string oc " (module C : CONNECTION)"
+	| 'f' -> if has_callback then output_string oc " f"
+	| 'x' -> List.iter emit_param ivs
+	| _ -> assert false)
+      !param_order
 
 let emit_impl_params oc ivs =
   output_string oc "C.Param.([|";
@@ -312,12 +321,13 @@ let () =
   let sqlgg_args_r = ref ["-gen"; "xml"] in
   let ml_out_r = ref None in
   let gen_r = ref `Auto in
-  let set_pass_connection = function
-    | "functor" -> pass_conn := `Functor
-    | "first" -> pass_conn := `First
-    | "second" -> pass_conn := `Second
-    | "last" -> pass_conn := `Last
-    | _ -> raise (Arg.Bad "Invalid argument for -pass-connection") in
+  let set_param_order s =
+    param_order := s;
+    use_functor :=
+      match s with
+      | "fx" | "xf" -> true
+      | "Cfx" | "fCx" | "fxC" | "Cxf" | "xCf" | "xfC" -> false
+      | _ -> raise (Arg.Bad "Invalid parameter order.") in
   Arg.parse
     [ "-name",
 	Arg.String (fun s -> sqlgg_args_r := "-name" :: sh_escaped s
@@ -328,9 +338,13 @@ let () =
 			   | "ml" -> gen_r := `ml
 			   | _ -> raise (Arg.Bad "Unsupported output type.")),
 	"mli|ml Type of output to generate.";
-      "-pass-connection",
-	Arg.String set_pass_connection,
-	"functor|first|second|last Where to accept the CONNECTION parameter.";
+      "-param-order",
+	Arg.String set_param_order,
+	"Cfx|fCx|fxC|fx Specify argument order for the generated functions.  \
+	    'C' represents the connection, \
+	    'f' represents the callback where relevant, and \
+	    'x' represents the query parameters.  \
+	    If 'C' is omitted, the code functorised on the connection.";
       "-o", Arg.String (fun s -> ml_out_r := Some s),
 	"PATH Write the output to PATH instead of standard output."; ]
     (fun s -> rev_inputs_r := s :: !rev_inputs_r)
