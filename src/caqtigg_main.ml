@@ -1,4 +1,4 @@
-(* Copyright (C) 2014  Petter Urkedal <paurkedal@gmail.com>
+(* Copyright (C) 2014--2016  Petter A. Urkedal <paurkedal@gmail.com>
  *
  * This library is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by
@@ -73,24 +73,24 @@ let emit_prologue oc_mli oc_ml =
     (fun oc ->
       fprintf oc "open %s\n\n" !connect_module;
       if !use_functor then
-	output_string oc "module Make (C : CONNECTION) : sig\n\n")
+        output_string oc "module Make (C : CONNECTION) : sig\n\n")
     oc_mli;
   iter_option
     (fun oc ->
       List.iter (fprintf oc "open %s\n")
-		[!monad_module; "Caqti_query"; !connect_module];
+                [!monad_module; "Caqti_query"; !connect_module];
       output_string oc "\n\
-	let _query_info (module C : CONNECTION) = function\n\
-	\  | Oneshot qs -> `Oneshot (qs C.backend_info)\n\
-	\  | Prepared qs -> `Prepared (qs.pq_name, \
-				       qs.pq_encode C.backend_info)\n\
-	let _required (module C : CONNECTION) q = function\n\
-	\  | Some r -> return r\n\
-	\  | None ->\n\
-	\    fail (Caqti.Miscommunication (C.uri, _query_info (module C) q, \
-				\"Received no tuples, expected one.\"))\n\n";
+        let _query_info (module C : CONNECTION) = function\n\
+       \  | Oneshot qs -> `Oneshot (qs C.backend_info)\n\
+       \  | Prepared qs -> `Prepared (qs.pq_name, \
+                                       qs.pq_encode C.backend_info)\n\
+        let _required (module C : CONNECTION) q = function\n\
+       \  | Some r -> return r\n\
+       \  | None ->\n\
+       \    fail (Caqti.Miscommunication (C.uri, _query_info (module C) q, \
+                                \"Received no tuples, expected one.\"))\n\n";
       if !use_functor then
-	output_string oc "module Make (C : CONNECTION) = struct\n\n")
+        output_string oc "module Make (C : CONNECTION) = struct\n\n")
     oc_ml
 
 let emit_epilogue oc_mli oc_ml =
@@ -108,10 +108,10 @@ let emit_intf_params emit_callback_param oc ivs =
   else
     String.iter
       (function
-	| 'C' -> output_string oc "(module CONNECTION) -> "
-	| 'f' -> (match emit_callback_param with None -> () | Some f -> f ())
-	| 'x' -> List.iter emit_param ivs
-	| _ -> assert false)
+        | 'C' -> output_string oc "(module CONNECTION) -> "
+        | 'f' -> (match emit_callback_param with None -> () | Some f -> f ())
+        | 'x' -> List.iter emit_param ivs
+        | _ -> assert false)
       !param_order
 
 let emit_intf_exec oc name sql ivs =
@@ -128,8 +128,8 @@ let emit_intf_single is_opt oc name sql ivs ovs =
     if List.tl ovs <> [] then output_char oc '(';
     List.iteri
       (fun i (idr, typ) ->
-	if i > 0 then output_string oc " * ";
-	output_string oc (type_of_sqltype typ))
+        if i > 0 then output_string oc " * ";
+        output_string oc (type_of_sqltype typ))
       ovs;
     if List.tl ovs <> [] then output_char oc ')'
   end;
@@ -142,8 +142,8 @@ let emit_intf_multi op mint mext oc name sql ivs ovs =
     output_char oc '(';
     List.iter
       (fun (idr, typ) ->
-	output_string oc (type_of_sqltype typ);
-	output_string oc " -> ")
+        output_string oc (type_of_sqltype typ);
+        output_string oc " -> ")
       ovs;
     output_string oc mint;
     output_string oc ") -> " in
@@ -170,10 +170,10 @@ let emit_impl_formals has_callback oc ivs =
   else
     String.iter
       (function
-	| 'C' -> output_string oc " (module C : CONNECTION)"
-	| 'f' -> if has_callback then output_string oc " f"
-	| 'x' -> List.iter emit_param ivs
-	| _ -> assert false)
+        | 'C' -> output_string oc " (module C : CONNECTION)"
+        | 'f' -> if has_callback then output_string oc " f"
+        | 'x' -> List.iter emit_param ivs
+        | _ -> assert false)
       !param_order
 
 let emit_impl_params oc ivs =
@@ -294,9 +294,9 @@ let rec scan_sqlgg f xic acc =
     let rec loop acc =
       match Xmlm.peek xic with
       | `El_start _ ->
-	let el tag els : 'a Xmlm.frag as 'a = `El (tag, els) in
-	let data s = `Data s in
-	loop (scan_stmt f (Xmlm.input_tree ~el ~data xic) acc)
+        let el tag els : 'a Xmlm.frag as 'a = `El (tag, els) in
+        let data s = `Data s in
+        loop (scan_stmt f (Xmlm.input_tree ~el ~data xic) acc)
       | `El_end -> ignore (Xmlm.input xic); acc
       | `Data _ -> ignore (Xmlm.input xic); loop acc
       | _ -> assert false in
@@ -310,8 +310,8 @@ let sh_escaped arg =
   Buffer.add_char buf '\'';
   String.iter
     (function '\\' -> Buffer.add_string buf "\\\\"
-	    | '"' ->  Buffer.add_string buf "\\\""
-	    | c -> Buffer.add_char buf c)
+            | '"' ->  Buffer.add_string buf "\\\""
+            | c -> Buffer.add_char buf c)
     arg;
   Buffer.add_char buf '\'';
   Buffer.contents buf
@@ -330,23 +330,23 @@ let () =
       | _ -> raise (Arg.Bad "Invalid parameter order.") in
   Arg.parse
     [ "-name",
-	Arg.String (fun s -> sqlgg_args_r := "-name" :: sh_escaped s
-						     :: !sqlgg_args_r),
-	"<identifier> Passed to sqlgg.";
+        Arg.String (fun s -> sqlgg_args_r := "-name" :: sh_escaped s
+                                                     :: !sqlgg_args_r),
+        "<identifier> Passed to sqlgg.";
       "-gen",
-	Arg.String (function "mli" -> gen_r := `mli
-			   | "ml" -> gen_r := `ml
-			   | _ -> raise (Arg.Bad "Unsupported output type.")),
-	"mli|ml Type of output to generate.";
+        Arg.String (function "mli" -> gen_r := `mli
+                           | "ml" -> gen_r := `ml
+                           | _ -> raise (Arg.Bad "Unsupported output type.")),
+        "mli|ml Type of output to generate.";
       "-param-order",
-	Arg.String set_param_order,
-	"Cfx|fCx|fxC|fx Specify argument order for the generated functions.  \
-	    'C' represents the connection, \
-	    'f' represents the callback where relevant, and \
-	    'x' represents the query parameters.  \
-	    If 'C' is omitted, the code functorised on the connection.";
+        Arg.String set_param_order,
+        "Cfx|fCx|fxC|fx Specify argument order for the generated functions.  \
+            'C' represents the connection, \
+            'f' represents the callback where relevant, and \
+            'x' represents the query parameters.  \
+            If 'C' is omitted, the code functorised on the connection.";
       "-o", Arg.String (fun s -> ml_out_r := Some s),
-	"PATH Write the output to PATH instead of standard output."; ]
+        "PATH Write the output to PATH instead of standard output."; ]
     (fun s -> rev_inputs_r := s :: !rev_inputs_r)
     (Sys.argv.(0) ^ " <input.sql>+");
   let sqlgg_args = !sqlgg_args_r @ List.rev !rev_inputs_r in
