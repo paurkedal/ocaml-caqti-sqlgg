@@ -39,7 +39,7 @@ let type_of_sqltype = function
   | "Datetime" -> "utc"
   | s -> ksprintf invalid_arg "Type %s reported by sqlgg is not supported." s
 let conv_of_sqltype = function
-  | "Text" -> "text"
+  | "Text" -> "string"
   | s -> type_of_sqltype s
 
 (* SQL Fixup *)
@@ -117,7 +117,7 @@ let emit_intf_params emit_callback_param oc ivs =
 let emit_intf_exec oc name sql ivs =
   fprintf oc "val %s : " name;
   emit_intf_params None oc ivs;
-  output_string oc "unit io\n";
+  fprintf oc "unit %s.t\n" !monad_module;
   if !add_docstrings then fprintf oc "(** [%s] *)\n\n" (comment_of_sql sql)
 
 let emit_intf_single is_opt oc name sql ivs ovs =
@@ -133,7 +133,8 @@ let emit_intf_single is_opt oc name sql ivs ovs =
       ovs;
     if List.tl ovs <> [] then output_char oc ')'
   end;
-  output_string oc (if is_opt then " option io\n" else " io\n");
+  if is_opt then output_string oc " option";
+  fprintf oc " %s.t\n" !monad_module;
   if !add_docstrings then fprintf oc "(** [%s] *)\n\n" (comment_of_sql sql)
 
 let emit_intf_multi op mint mext oc name sql ivs ovs =
@@ -158,10 +159,12 @@ let emit_intf oc name sql cardinals ivs ovs =
   | `Zero_one -> emit_intf_single true oc name sql ivs ovs
   | `One -> emit_intf_single false oc name sql ivs ovs
   | `Nat ->
-    emit_intf_multi "fold" "'a -> 'a" "'a -> 'a io" oc name sql ivs ovs;
-    emit_intf_multi "fold_s" "'a -> 'a io" "'a -> 'a io" oc name sql ivs ovs;
-    emit_intf_multi "iter_s" "unit io" "unit io" oc name sql ivs ovs;
-    emit_intf_multi "iter_p" "unit io" "unit io" oc name sql ivs ovs
+    let update_io_type = sprintf "'a -> 'a %s.t" !monad_module in
+    let unit_io_type = sprintf "unit %s.t" !monad_module in
+    emit_intf_multi "fold" "'a -> 'a" update_io_type oc name sql ivs ovs;
+    emit_intf_multi "fold_s" update_io_type update_io_type oc name sql ivs ovs;
+    emit_intf_multi "iter_s" unit_io_type unit_io_type oc name sql ivs ovs;
+    emit_intf_multi "iter_p" unit_io_type unit_io_type oc name sql ivs ovs
 
 let emit_impl_formals has_callback oc ivs =
   let emit_param (idr, typ) = output_char oc ' '; output_string oc idr in
@@ -206,7 +209,7 @@ let emit_impl_zero_one is_opt oc name ivs ovs =
   emit_impl_formals false oc ivs;
   output_string oc " =\n";
   emit_impl_decode oc ovs;
-  fprintf oc "  C.find _%s g " name;
+  fprintf oc "  C.find_opt _%s g " name;
   emit_impl_params oc ivs;
   output_char oc '\n'
 
@@ -216,9 +219,7 @@ let emit_impl_one is_opt oc name ivs ovs =
   output_string oc " =\n";
   emit_impl_decode oc ovs;
   fprintf oc "  C.find _%s g " name;
-  emit_impl_params oc ivs;
-  (* FIXME: The following shall raise Miscommunication. *)
-  fprintf oc " >>= _required (module C) _%s" name
+  emit_impl_params oc ivs
 
 let emit_impl_multi op oc name ivs ovs =
   fprintf oc "let %s_%s" op name;

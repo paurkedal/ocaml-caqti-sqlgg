@@ -17,13 +17,13 @@ let () = dispatch begin function
     Options.use_ocamlfind := true
 
   | After_rules as e ->
-    rule "sql -> _fx.ml" ~tags:["caqtigg-fx"; "ocaml"]
+    rule "sql -> _fx.ml"
          ~prods:["%_fx.mli"; "%_fx.ml"] ~deps:["%.sql"; !My_options.caqtigg]
          (caqtigg ~po:"fx" "%.sql" "%_fx.ml");
-    rule "sql -> _Cfx.ml" ~tags:["caqtigg-Cfx"; "ocaml"]
+    rule "sql -> _Cfx.ml"
          ~prods:["%_Cfx.mli"; "%_Cfx.ml"] ~deps:["%.sql"; !My_options.caqtigg]
          (caqtigg ~po:"Cfx" "%.sql" "%_Cfx.ml");
-    rule "sql -> _fxC.ml" ~tags:["caqtigg-fxC"; "ocaml"]
+    rule "sql -> _fxC.ml"
          ~prods:["%_fxC.mli"; "%_fxC.ml"] ~deps:["%.sql"; !My_options.caqtigg]
          (caqtigg ~po:"fxC" "%.sql" "%_fxC.ml");
 
